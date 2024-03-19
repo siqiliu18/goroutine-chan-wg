@@ -5,8 +5,7 @@ import (
 	"sync"
 )
 
-//https://medium.com/nerd-for-tech/learning-go-concurrency-goroutines-channels-8836b3c34152
-
+// https://www.geeksforgeeks.org/using-waitgroup-in-golang/ (!!!!)
 func runner1(wg *sync.WaitGroup) {
 	defer wg.Done()
 	fmt.Print("\nI am first runner")
