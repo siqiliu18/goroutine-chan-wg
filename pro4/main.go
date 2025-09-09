@@ -22,7 +22,7 @@ func main() {
 	out2 := make(chan int)
 
 	go fast(2, out1)
-	go fast(3, out2)
+	go slow(3, out2)
 
 	for i := 0; i < 2; i++ {
 		select {
