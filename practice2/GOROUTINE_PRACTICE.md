@@ -261,7 +261,157 @@ func main() {
 
 ---
 
+## Problem 4: Fan-Out Fan-In Pattern (Medium-Hard)
+
+### Problem Statement
+
+Implement a fan-out/fan-in pattern:
+
+1. **Fan-Out (Generator)**: Create a function that generates numbers 1-20 and sends them to a channel
+2. **Fan-Out (Workers)**: Create **4 worker goroutines** that each:
+   - Receive numbers from the input channel
+   - Square each number (multiply by itself)
+   - Send the squared result to an output channel
+3. **Fan-In (Collector)**: Create a **collector goroutine** that:
+   - Receives all squared results from the output channel
+   - Collects them in a slice
+   - Prints the sorted results at the end
+4. Ensure proper channel closure and synchronization
+5. Use `sync.WaitGroup` to coordinate all goroutines
+
+### Expected Output
+```
+Squared results: [1 4 9 16 25 36 49 64 81 100 121 144 169 196 225 256 289 324 361 400]
+```
+
+### My Submission
+
+```go
+func Generator(ch chan int) {
+	for i := 1; i <= 20; i++ {
+		ch <- i
+	}
+	close(ch)
+}
+
+func Workers(ch chan int, outCh chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for c := range ch {
+		val := c * c
+		outCh <- val
+	}
+}
+
+func Collector(outCh chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	results := []int{}
+	for ch := range outCh {
+		results = append(results, ch)
+	}
+	sort.Ints(results)
+	fmt.Println("Squared results:", results)
+}
+
+func main() {
+	var wg sync.WaitGroup
+	var collectorWg sync.WaitGroup
+	ch := make(chan int)
+	outCh := make(chan int)
+
+	collectorWg.Add(1)
+	go Collector(outCh, &collectorWg)
+
+	go Generator(ch)
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go Workers(ch, outCh, &wg)
+	}
+	wg.Wait()
+
+	close(outCh)
+
+	collectorWg.Wait()
+}
+```
+
+### Issues Found
+
+1. ✅ **Correct**: Proper channel closure sequence
+2. ✅ **Correct**: WaitGroup usage for coordination
+3. ✅ **Correct**: Execution order (collector → workers → generator)
+4. ⚠️ **Minor**: Typo "Squard" → "Squared" in output
+
+### Key Concepts Learned
+
+- **Fan-Out**: One channel feeding multiple workers (Generator → 4 Workers)
+- **Fan-In**: Multiple workers feeding one channel (4 Workers → Collector)
+- **Pipeline Pattern**: Data flows through stages (generator → workers → collector)
+- **Channel Closure Coordination**: 
+  - Generator closes input channel after sending
+  - Main closes output channel after all workers finish
+  - Collector stops when output channel closes
+- **Execution Order Matters**: With unbuffered channels, start receivers before senders
+- **Multiple WaitGroups**: Use separate WaitGroups for different stages of the pipeline
+
+### Important Learning Points
+
+**Why the execution order matters:**
+- Unbuffered channels block until sender/receiver are both ready
+- If Generator runs before Workers, it blocks on first send
+- Solution: Start Collector and Workers first, then Generator
+
+**Channel closure sequence:**
+```
+1. Generator finishes → close(input channel)
+2. Workers finish (detected by wg.Wait()) → close(output channel)
+3. Collector stops when output channel closes
+```
+
+---
+
 ## Q&A Section
+
+### Question: Buffered vs Unbuffered Channels - Why deadlock?
+
+**Answer:**
+
+**Buffered Channel:**
+```go
+task := make(chan int, 10)  // Can hold 10 values
+for i := 1; i <= 10; i++ {
+    task <- i  // Non-blocking (until buffer full)
+}
+// Workers can start after this - simpler execution order
+```
+
+**Unbuffered Channel:**
+```go
+task := make(chan int)  // Buffer size = 0
+// If you send before receivers are ready → DEADLOCK
+for i := 1; i <= 10; i++ {
+    task <- i  // BLOCKS waiting for receiver
+}
+```
+
+**Solution for unbuffered channels:**
+- Start receivers (workers) BEFORE sending
+- Or send in a goroutine while receivers are running
+
+**When to Use Each:**
+
+- **Buffered Channels**: 
+  - When you know approximate max items
+  - Want to decouple sender/receiver timing
+  - Most practical for many real-world cases
+  - Simpler code, more forgiving
+
+- **Unbuffered Channels**:
+  - When you need strict synchronization
+  - Building reusable libraries
+  - Production code where correctness is critical
+  - More complex but "textbook correct"
+
+---
 
 ### Question: How to calculate `rand.Intn(401) + 100` for 100-500ms range?
 
@@ -311,6 +461,382 @@ Want range [a, b] (inclusive)?
 
 ---
 
+## Additional Intermediate Practice Problems
+
+### Problem 4A: Simple Producer-Consumer (Easy-Medium)
+
+**Problem Statement:**
+
+Create a simple producer-consumer pattern:
+
+1. Create **2 producer goroutines** that each generate 5 random numbers (1-100) and send them to a shared channel
+2. Create **1 consumer goroutine** that receives all numbers from the channel and prints them
+3. Use proper channel closing to signal completion
+4. Ensure all goroutines complete before the program exits
+
+**Expected Output (format may vary):**
+```
+Producer 1: sent 42
+Producer 2: sent 17
+Consumer: received 42
+Consumer: received 17
+Producer 1: sent 88
+...
+Consumer: received 88
+All done!
+```
+
+**My Initial Submission:**
+
+```go
+func producer(id int, shared chan int) {
+	for i := 0; i < 5; i++ {
+		val := rand.IntN(100)
+		fmt.Printf("Producer %v: sent %v\n", id, val)
+		shared <- val
+	}
+}
+
+func main() {
+	shared := make(chan int)
+	go producer(1, shared)
+	go producer(2, shared)
+	for i := 0; i < 10; i++ {
+		val := <-shared
+		fmt.Printf("Consumer: received %v\n", val)
+	}
+	fmt.Println("All done!")
+	close(shared)
+}
+```
+
+**My Submission with WaitGroup (Attempt 1 - Deadlock):**
+
+```go
+func producer(id int, shared chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 0; i < 5; i++ {
+		val := rand.IntN(100)
+		fmt.Printf("Producer %v: sent %v\n", id, val)
+		shared <- val
+	}
+}
+
+func main() {
+	shared := make(chan int)  // Unbuffered channel
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+	go producer(1, shared, &wg)
+	go producer(2, shared, &wg)
+
+	wg.Wait()      // Deadlock! Producers block on send, no receiver ready
+	close(shared)
+
+	for val := range shared {
+		fmt.Printf("Consumer: received %v\n", val)
+	}
+	fmt.Println("All done!")
+}
+```
+
+**Issues Found:**
+
+1. ❌ **Deadlock with Unbuffered Channel**: When using unbuffered channels, the execution order matters. If producers start sending before the consumer is ready, they block forever waiting for a receiver.
+
+2. ⚠️ **Channel Closing**: In the initial submission, channel was closed in main after receiving, which works but isn't ideal.
+
+**Solution 1: Unbuffered Channel with Proper Order**
+
+```go
+func producer(id int, shared chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 0; i < 5; i++ {
+		val := rand.IntN(100)
+		fmt.Printf("Producer %v: sent %v\n", id, val)
+		shared <- val
+	}
+}
+
+func main() {
+	shared := make(chan int)  // Unbuffered
+	var producerWg sync.WaitGroup
+	var consumerWg sync.WaitGroup
+
+	// Step 1: Start consumer FIRST (ready to receive)
+	consumerWg.Add(1)
+	go func() {
+		defer consumerWg.Done()
+		for val := range shared {
+			fmt.Printf("Consumer: received %v\n", val)
+		}
+	}()
+
+	// Step 2: Start producers (consumer is ready!)
+	producerWg.Add(2)
+	go producer(1, shared, &producerWg)
+	go producer(2, shared, &producerWg)
+
+	// Step 3: Wait for producers
+	producerWg.Wait()
+	close(shared)
+
+	// Step 4: Wait for consumer
+	consumerWg.Wait()
+	fmt.Println("All done!")
+}
+```
+
+**Solution 2: Buffered Channel (Simpler and More Practical)**
+
+```go
+func producer(id int, shared chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 0; i < 5; i++ {
+		val := rand.IntN(100)
+		fmt.Printf("Producer %v: sent %v\n", id, val)
+		shared <- val  // Non-blocking (until buffer full)
+	}
+}
+
+func main() {
+	shared := make(chan int, 10)  // Buffered channel
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+	go producer(1, shared, &wg)
+	go producer(2, shared, &wg)
+
+	wg.Wait()      // Wait for producers
+	close(shared)  // Close channel
+
+	// Consumer receives all values
+	for val := range shared {
+		fmt.Printf("Consumer: received %v\n", val)
+	}
+
+	fmt.Println("All done!")
+}
+```
+
+**Comparison of Approaches:**
+
+| Approach | Pros | Cons | When to Use |
+|----------|------|------|-------------|
+| **Fixed Count Loop** | Simple, no WaitGroup needed | Hard-coded count, breaks if count changes | Learning, simple scripts |
+| **Buffered + for range** | Flexible, simpler execution order, no hard-coded count | Need to know buffer size | Most practical for real-world cases |
+| **Unbuffered + WaitGroup** | Most "correct" pattern, no buffer needed | More complex, execution order critical | Production code, strict synchronization |
+
+**Key Concepts Learned:**
+
+- **Unbuffered Channel Deadlock**: With unbuffered channels, receivers must be ready before senders start. Otherwise, senders block forever.
+- **Buffered Channels Simplify**: Buffered channels decouple sender/receiver timing, making code simpler and more forgiving.
+- **Execution Order Matters**: With unbuffered channels: Consumer → Producers → Wait → Close → Wait for consumer
+- **WaitGroup Coordination**: Use separate WaitGroups for different stages (producers vs consumer)
+- **for range Pattern**: Automatically receives until channel closes - no need to know exact count
+
+**Real-World Perspective:**
+
+In practice, many developers use buffered channels for producer-consumer patterns because:
+1. Simpler code (no complex execution order)
+2. Better performance (less blocking)
+3. More forgiving (order matters less)
+
+The unbuffered + WaitGroup pattern is more "textbook correct" but often overkill for simple cases. Choose based on your needs:
+- **Learning/Simple**: Fixed count loop
+- **Practical/Real-world**: Buffered channel + for range
+- **Production/Strict**: Unbuffered + WaitGroup with proper ordering
+
+---
+
+### Problem 4B: Channel with Timeout (Easy-Medium)
+
+**Problem Statement:**
+
+Create a program that demonstrates channel timeout:
+
+1. Create a function that sends numbers 1-5 to a channel with a 200ms delay between each
+2. In main, receive from the channel with a **1 second timeout**
+3. Print each received number
+4. If timeout occurs, print "Timeout! Not all numbers received"
+
+**Expected Output:**
+```
+Received: 1
+Received: 2
+Received: 3
+Received: 4
+Received: 5
+All numbers received!
+```
+
+**Or if timeout:**
+```
+Received: 1
+Received: 2
+Received: 3
+Timeout! Not all numbers received
+```
+
+**Hints:**
+- Use `time.After()` for timeout
+- Use `select` statement to handle both channel receive and timeout
+- Launch sender as goroutine
+
+**Key Learning:**
+- `select` statement for non-blocking operations
+- Timeout pattern with channels
+- Handling multiple channel operations
+
+---
+
+### Problem 4C: Multiple Channels with Select (Medium)
+
+**Problem Statement:**
+
+Create a program that handles multiple channels:
+
+1. Create **2 channels**: one for numbers (1-5) and one for letters ('a'-'e')
+2. Create goroutines to send to each channel
+3. Use a **single goroutine** with `select` to:
+   - Print "Received number: X" when receiving from numbers channel
+   - Print "Received letter: X" when receiving from letters channel
+   - Exit when both channels are closed
+4. Close channels after sending all data
+
+**Expected Output (order may vary):**
+```
+Received number: 1
+Received letter: a
+Received number: 2
+Received letter: b
+...
+Received number: 5
+Received letter: e
+Done!
+```
+
+**Hints:**
+- Use `select` with multiple cases
+- Use a counter or separate goroutine to track when both channels are done
+- Close channels after sending
+
+**Key Learning:**
+- `select` statement with multiple channels
+- Handling multiple concurrent data sources
+- Coordinating multiple channel closures
+
+---
+
+### Problem 4D: WaitGroup Practice (Easy-Medium)
+
+**Problem Statement:**
+
+Practice using WaitGroup properly:
+
+1. Create **5 goroutines** that each:
+   - Print "Goroutine X: starting..."
+   - Sleep for a random duration (100-500ms)
+   - Print "Goroutine X: done!"
+2. Use `sync.WaitGroup` to wait for all goroutines
+3. Print "All goroutines finished!" after all complete
+
+**Expected Output (order may vary):**
+```
+Goroutine 1: starting...
+Goroutine 2: starting...
+Goroutine 3: starting...
+Goroutine 4: starting...
+Goroutine 5: starting...
+Goroutine 3: done!
+Goroutine 1: done!
+...
+Goroutine 5: done!
+All goroutines finished!
+```
+
+**Hints:**
+- Call `wg.Add(5)` before starting goroutines
+- Each goroutine should call `defer wg.Done()`
+- Main calls `wg.Wait()` to wait
+
+**Key Learning:**
+- Proper WaitGroup usage pattern
+- `defer wg.Done()` ensures Done is always called
+- WaitGroup coordinates multiple independent goroutines
+
+---
+
+### Problem 4E: Buffered Channel Practice (Easy-Medium)
+
+**Problem Statement:**
+
+Understand buffered channels:
+
+1. Create a **buffered channel** with capacity 3
+2. Send 5 numbers (1-5) to the channel
+3. Create a receiver that prints all numbers
+4. Observe the behavior difference between buffered and unbuffered
+
+**Expected Output:**
+```
+Sending 1 (non-blocking, buffer has space)
+Sending 2 (non-blocking, buffer has space)
+Sending 3 (non-blocking, buffer has space)
+Sending 4 (blocks until receiver takes one)
+Sending 5 (blocks until receiver takes one)
+Received: 1
+Received: 2
+Received: 3
+Received: 4
+Received: 5
+```
+
+**Hints:**
+- Buffered channels allow sending up to buffer size without blocking
+- After buffer is full, sends block until space is available
+- Receivers can drain the buffer
+
+**Key Learning:**
+- Buffered vs unbuffered channel behavior
+- When sends block with buffered channels
+- Decoupling sender/receiver timing
+
+---
+
+### Problem 4F: Channel Direction (Easy)
+
+**Problem Statement:**
+
+Practice using channel directions (send-only, receive-only):
+
+1. Create a function `sender(ch chan<- int)` that sends numbers 1-5 (send-only channel)
+2. Create a function `receiver(ch <-chan int)` that receives and prints (receive-only channel)
+3. In main, create channel and pass to both functions
+4. Use proper channel closure
+
+**Expected Output:**
+```
+Received: 1
+Received: 2
+Received: 3
+Received: 4
+Received: 5
+All done!
+```
+
+**Hints:**
+- `chan<- int` means send-only
+- `<-chan int` means receive-only
+- This provides type safety and makes code intent clear
+
+**Key Learning:**
+- Channel direction types for better code safety
+- Enforcing send-only or receive-only at compile time
+- Clearer function signatures
+
+---
+
 ## Summary of Common Mistakes
 
 1. **Channel Closing**: Always close channels in the sender, not the receiver
@@ -318,14 +844,48 @@ Want range [a, b] (inclusive)?
 3. **WaitGroup Usage**: Remember to call `wg.Done()` (usually with `defer`) in each goroutine
 4. **Channel Range**: Use `for range ch` to automatically handle channel closure
 5. **Random Range**: Use `rand.Intn(max - min + 1) + min` for inclusive ranges
+6. **Unbuffered Channel Deadlock**: With unbuffered channels, receivers must be ready before senders start. Otherwise, senders block forever. Solution: Start receivers first, or use buffered channels.
+7. **Execution Order with Unbuffered Channels**: When using unbuffered channels, the order matters - start receivers before senders, or use buffered channels for simpler code.
 
 ---
 
-## Next Problems to Practice
+## Recommended Learning Path
 
-- Problem 4: Fan-Out Fan-In Pattern (Medium-Hard)
+### Beginner → Easy (Completed ✅)
+- ✅ Problem 1: Basic Goroutine Execution
+- ✅ Problem 2: Basic Channel Communication
+
+### Easy → Medium (Completed ✅)
+- ✅ Problem 3: Worker Pool Pattern
+
+### Medium → Medium-Hard (Completed ✅)
+- ✅ Problem 4: Fan-Out Fan-In Pattern
+
+### Intermediate Practice (Recommended Next)
+- Problem 4A: Simple Producer-Consumer (Easy-Medium)
+- Problem 4B: Channel with Timeout (Easy-Medium)
+- Problem 4C: Multiple Channels with Select (Medium)
+- Problem 4D: WaitGroup Practice (Easy-Medium)
+- Problem 4E: Buffered Channel Practice (Easy-Medium)
+- Problem 4F: Channel Direction (Easy)
+
+### Advanced Problems (After mastering intermediate)
 - Problem 5: Context Cancellation & Timeout (Medium-Hard)
 - Problem 6: Select Statement with Multiple Channels (Hard)
 - Problem 7: Mutex for Shared State (Hard)
 - Problem 8: Pipeline Pattern with Error Handling (Very Hard)
+
+---
+
+## Learning Tips
+
+1. **Master the basics first**: Make sure you're comfortable with Problems 1-3 before moving on
+2. **Practice intermediate problems**: Problems 4A-4F build essential skills gradually
+3. **Understand the patterns**: Each problem teaches a specific pattern you'll use in real code
+4. **Common gotchas to watch for**:
+   - Closure bugs with loop variables
+   - Channel closure timing
+   - Unbuffered channel deadlocks
+   - WaitGroup usage (Add before goroutines, Done in goroutines)
+5. **Test your code**: Run it multiple times - concurrency bugs can be non-deterministic
 
