@@ -64,19 +64,18 @@
 // 	// 6. Print all results with success/failure status
 
 // 	// Your implementation goes here:
+// 	/*
+// 		Sender doesn't block until buffer is full
+// 		All 7 goroutines can send immediately and exit
+// 		Main goroutine reads from buffer at its own pace
+// 		Faster because no blocking
+// 	*/
 // 	ch := make(chan FetchResult, len(urls))
 // 	for _, url := range urls {
 // 		go func(url string) {
 // 			ch <- fetchURLWithResult(url)
 // 		}(url)
 // 	}
-
-// 	// DOES NOT PRINT ALL RESULTS BECAUSE THE CHANNEL IS NOT CLOSED
-// 	// close(ch)
-
-// 	// for result := range ch {
-// 	// 	fmt.Printf("URL: %s, Data: %s, Error: %v\n", result.URL, result.Data, result.Error)
-// 	// }
 
 // 	for i := 0; i < len(urls); i++ {
 // 		result := <-ch

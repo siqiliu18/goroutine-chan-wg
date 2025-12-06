@@ -71,20 +71,31 @@
 // 	defer ticker.Stop()
 // 	ch := make(chan FetchResult)
 
+// 	/*
+// 		What happens:
+
+// 			<-ticker.C blocks and waits for the ticker to tick
+// 			Every 500ms, the ticker sends a signal
+// 			When received, launch one goroutine
+// 			Wait another 500ms, launch the next one
+// 			Timeline:
+
+// 			t=0ms: Launch goroutine 1
+// 			t=500ms: Launch goroutine 2
+// 			t=1000ms: Launch goroutine 3
+// 			t=1500ms: Launch goroutine 4
+// 			... and so on
+// 			So with 10 URLs and 500ms intervals = ~5 seconds minimum to launch all goroutines (plus fetch time).
+
+// 			This is rate limiting — you control how fast goroutines are created to avoid overwhelming the system.
+// 			Different from Problem 2 where all goroutines launch immediately.
+// 	*/
 // 	for _, url := range urls {
 // 		<-ticker.C
 // 		go func(url string) {
 // 			ch <- fetchURLWithResult(url)
 // 		}(url)
 // 	}
-
-// 	// problematic:
-// 	// if main go routine reaches this line but the for loop above is still trying to send to the channel,
-// 	// then there will be a deadlock.
-// 	// close(ch)
-// 	// for data := range ch {
-// 	// 	fmt.Printf("URL: %s, Data: %s, Error: %v\n", data.URL, data.Data, data.Error)
-// 	// }
 
 // 	// easier way to do it is to use a for loop to receive from the channel.
 // 	for i := 0; i < len(urls); i++ {

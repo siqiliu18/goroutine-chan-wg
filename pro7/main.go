@@ -105,15 +105,18 @@ func fetchWeather(city string) (Data, error) {
 
 func main() {
 	startNow := time.Now()
-	cities := []string{"toronto","london", "paris", "tokyo", "beijing"}
+	cities := []string{"toronto", "london", "paris", "tokyo", "beijing"}
 	// data := Data{}
 	wg := new(sync.WaitGroup)
 	wg.Add(len(cities))
+	justTest := []Data{}
 	for _, city := range cities {
+		// wg.Add(1)
 		go func(city string) {
 			defer wg.Done()
 			data, _ := fetchWeather(city)
 			fmt.Printf("This is the temp %v from %s\n", data.MainField.Temp, city)
+			justTest = append(justTest, data)
 		}(city)
 	}
 	wg.Wait()
