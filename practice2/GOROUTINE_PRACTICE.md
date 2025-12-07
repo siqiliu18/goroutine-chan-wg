@@ -810,15 +810,129 @@ Received letter: e
 Done!
 ```
 
-**Hints:**
-- Use `select` with multiple cases
-- Use a counter or separate goroutine to track when both channels are done
-- Close channels after sending
+**My Submission (Final Working Version):**
 
-**Key Learning:**
-- `select` statement with multiple channels
-- Handling multiple concurrent data sources
-- Coordinating multiple channel closures
+```go
+func sendNum(ch chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 1; i <= 5; i++ {
+		ch <- i
+	}
+	close(ch)
+}
+
+func sendLetter(ch chan rune, wg *sync.WaitGroup) {
+	defer wg.Done()
+	s := "abcde"
+	for _, c := range s {
+		ch <- c
+	}
+	close(ch)
+}
+
+func main() {
+	chNum := make(chan int)
+	chLetter := make(chan rune)
+	wgNum := &sync.WaitGroup{}
+	wgLetter := &sync.WaitGroup{}
+	wgReceiver := &sync.WaitGroup{}
+
+	wgReceiver.Add(1)
+	go func() {
+		numClosed := false
+		letterClosed := false
+		defer wgReceiver.Done()
+		for {
+			select {
+			case num, ok := <-chNum:
+				if !ok {
+					numClosed = true
+					chNum = nil  // Set to nil to exclude from select
+				} else {
+					fmt.Printf("Received number: %v\n", num)
+				}
+			case letter, ok := <-chLetter:
+				if !ok {
+					letterClosed = true
+					chLetter = nil  // Set to nil to exclude from select
+				} else {
+					fmt.Printf("Received letter: %v\n", string(letter))
+				}
+			}
+			if numClosed && letterClosed {
+				break
+			}
+		}
+	}()
+
+	wgNum.Add(1)
+	wgLetter.Add(1)
+	go sendNum(chNum, wgNum)
+	go sendLetter(chLetter, wgLetter)
+	wgNum.Wait()
+	wgLetter.Wait()
+
+	wgReceiver.Wait()
+	fmt.Println("Done!")
+}
+```
+
+**Issues Encountered and Fixed:**
+
+1. **Initialization Bug**: Initially used `var numOK bool` and `var letterOK bool` which default to `false`. The exit condition `if !numOK && !letterOK` was `true` from the start, causing immediate exit. **Fix**: Use separate `numClosed` and `letterClosed` flags initialized to `false`.
+
+2. **Execution Order**: Initially tried to wait for receiver before starting senders, causing deadlock. **Fix**: Start receiver goroutine first, then start senders, then wait for senders, then wait for receiver.
+
+3. **Channel Closure Detection**: Need to check `ok` value when receiving to detect closed channels. **Fix**: Use `value, ok := <-ch` syntax and check `!ok` to detect closure.
+
+4. **Closed Channel Handling**: When a channel is closed, `select` can still select it repeatedly, returning `(zeroValue, false)`. **Fix**: Set closed channels to `nil` when `!ok` is detected. A `nil` channel in `select` is never selected, preventing repeated zero-value returns.
+
+**Key Concepts Learned:**
+
+- **`select` with Multiple Channels**: Can handle multiple channels simultaneously, executing whichever case is ready first
+- **Channel Closure Detection**: Use `value, ok := <-ch` syntax. When `ok` is `false`, the channel is closed
+- **Execution Order with Unbuffered Channels**: 
+  - Start receiver goroutine first (so it's ready to receive)
+  - Then start senders
+  - Wait for senders to finish (they close channels)
+  - Then wait for receiver to finish (it detects closure and exits)
+- **Why Receiver Must Start First**: With unbuffered channels, senders block until a receiver is ready. Starting the receiver first maximizes the chance it's in `select` when senders start sending.
+- **Why Wait for Senders Before Receiver**: Senders must finish sending and close channels before the receiver can detect closure and exit. If you wait for receiver first, it might still be waiting for data that hasn't been sent yet → deadlock.
+
+**Understanding the Execution Order:**
+
+```
+Time →
+1. Start receiver goroutine (line 35)
+   ↓ (receiver enters select, waiting)
+2. Start sender goroutines (lines 64-65)
+   ↓ (senders send data, receiver receives)
+3. Wait for senders to finish (lines 66-67)
+   ↓ (senders close channels)
+4. Wait for receiver to finish (line 69)
+   ↓ (receiver detects both channels closed, exits)
+5. "Done!"
+```
+
+**Why Setting Channels to `nil` Works:**
+
+Setting a closed channel to `nil` in `select` excludes it from future selections. This is important because:
+- A `nil` channel in `select` is **never selected** (it's always blocked)
+- This prevents `select` from repeatedly selecting closed channels and returning `(zeroValue, false)`
+- You must set it to `nil` when `!ok` (channel closed), not in the `else` block
+- The channel variable must be captured from the outer scope (which works in this case)
+
+**Key Point**: When a channel is closed and set to `nil`, the `select` statement will skip that case entirely, making the loop more efficient and preventing unnecessary zero-value processing.
+
+**Real-World Application:**
+
+This pattern is used for:
+- Handling multiple data sources concurrently
+- Merging data from multiple channels
+- Implementing fan-in patterns
+- Processing data from multiple workers simultaneously
+
+The key is proper synchronization: ensuring receivers are ready before senders start, and waiting for senders to finish before waiting for receivers.
 
 ---
 

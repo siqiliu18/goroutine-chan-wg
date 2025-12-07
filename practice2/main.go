@@ -2,47 +2,71 @@ package main
 
 import (
 	"fmt"
-	"math/rand/v2"
 	"sync"
 )
 
-// Problem 4A
-func producer(id int, shared chan int, wg *sync.WaitGroup) {
+// Problem 4C
+
+func sendNum(ch chan int, wg *sync.WaitGroup) {
 	defer wg.Done()
-	for i := 0; i < 5; i++ {
-		val := rand.IntN(100)
-		fmt.Printf("Producer %v: sent %v\n", id, val)
-		shared <- val
+	for i := 1; i <= 5; i++ {
+		ch <- i
 	}
+	close(ch)
+}
+
+func sendLetter(ch chan rune, wg *sync.WaitGroup) {
+	defer wg.Done()
+	s := "abcde"
+	for _, c := range s {
+		ch <- c
+	}
+	close(ch)
 }
 
 func main() {
-	shared := make(chan int)
-	var producerWg sync.WaitGroup
-	var consumerWg sync.WaitGroup
+	chNum := make(chan int)
+	chLetter := make(chan rune)
+	wgNum := &sync.WaitGroup{}
+	wgLetter := &sync.WaitGroup{}
+	wgReceiver := &sync.WaitGroup{}
 
-	// Step 1: Start consumer FIRST (ready to receive)
-	consumerWg.Add(1)
+	wgReceiver.Add(1)
 	go func() {
-		defer consumerWg.Done()
-		for val := range shared {
-			fmt.Printf("Consumer: received %v\n", val)
+		numClosed := false
+		letterClosed := false
+		defer wgReceiver.Done()
+		for {
+			select {
+			case num, ok := <-chNum:
+				if !ok {
+					numClosed = true
+					chNum = nil // better to set to nil to exclude from select
+				} else {
+					fmt.Printf("Received number: %v\n", num)
+				}
+			case letter, ok := <-chLetter:
+				if !ok {
+					letterClosed = true
+					chLetter = nil // better to set to nil to exclude from select
+				} else {
+					fmt.Printf("Received letter: %v\n", string(letter))
+				}
+			}
+			if numClosed && letterClosed {
+				break
+			}
 		}
 	}()
 
-	// Step 2: Start producers (consumer is ready!)
-	producerWg.Add(2)
-	go producer(1, shared, &producerWg)
-	go producer(2, shared, &producerWg)
+	wgNum.Add(1)
+	wgLetter.Add(1)
+	go sendNum(chNum, wgNum)
+	go sendLetter(chLetter, wgLetter)
+	wgNum.Wait()
+	wgLetter.Wait()
 
-	// Step 3: Wait for all producers to finish
-	producerWg.Wait()
+	wgReceiver.Wait() // receiver wait group must be after the senders wait groups?
 
-	// Step 4: Close channel (signals consumer to stop)
-	close(shared)
-
-	// Step 5: Wait for consumer to finish
-	consumerWg.Wait()
-
-	fmt.Println("All done!")
+	fmt.Println("Done!")
 }
