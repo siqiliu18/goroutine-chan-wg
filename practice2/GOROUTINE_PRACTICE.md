@@ -678,15 +678,109 @@ Received: 3
 Timeout! Not all numbers received
 ```
 
-**Hints:**
-- Use `time.After()` for timeout
-- Use `select` statement to handle both channel receive and timeout
-- Launch sender as goroutine
+**My Submission:**
 
-**Key Learning:**
-- `select` statement for non-blocking operations
-- Timeout pattern with channels
-- Handling multiple channel operations
+```go
+func sender(ch chan int) {
+	for i := 1; i <= 5; i++ {
+		ch <- i
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func main() {
+	ch := make(chan int)
+	go sender(ch)
+
+	var val int
+	for i := 1; i <= 5; i++ {
+		select {
+		case val = <-ch:
+			fmt.Printf("Received: %v\n", val)
+		case <-time.After(1 * time.Second):
+			fmt.Println("Timeout! Not all numbers receieved")
+		}
+	}
+	fmt.Println("All numbers received!")
+}
+```
+
+**Observation:**
+
+The timeout never triggers in this implementation because:
+- Sender sends immediately, then sleeps 200ms
+- Each value arrives within 200ms (well under the 1-second timeout)
+- The timeout case is never reached
+
+**What Problem 4B is Actually Teaching:**
+
+The goal is to learn the **pattern**, not necessarily to trigger the timeout. This problem teaches:
+
+1. **The `select` Statement Syntax**: How to use `select` with multiple cases
+2. **Timeout Pattern**: How to add timeouts to channel operations using `time.After()`
+3. **The "Receive with Timeout" Pattern**: A common pattern in production code
+
+**Why the Pattern Matters (Even if Timeout Doesn't Trigger):**
+
+Think of it like a seatbelt:
+- You wear it even if you don't crash
+- It's there for safety
+- The timeout protects against:
+  - Network delays
+  - Slow operations
+  - Deadlocks
+  - Hung processes
+
+In real-world code, you add timeouts as a safety mechanism, even if they rarely trigger. The pattern is what's important.
+
+**Key Concepts Learned:**
+
+- **`select` Statement**: Handles multiple channel operations, executes whichever case is ready first
+- **`time.After()`**: Creates a channel that fires after the specified duration
+- **Timeout Pattern**: Always have a timeout case in `select` for safety in production code
+- **Pattern vs. Execution**: The pattern is what matters, not whether the timeout actually triggers in this specific example
+
+**Understanding `select` with Timeout:**
+
+```go
+select {
+case val = <-ch:
+    // Handle received value (executes if data is ready)
+case <-time.After(1 * time.Second):
+    // Handle timeout (executes if 1 second passes without data)
+}
+```
+
+- `select` waits for whichever case is ready first
+- If channel has data → receives immediately
+- If no data arrives within timeout → timeout fires
+- Each `select` has its own timeout timer
+
+**To Test Timeout (Optional):**
+
+If you want to see the timeout trigger, add a delay in the sender:
+
+```go
+func sender(ch chan int) {
+	time.Sleep(1500 * time.Millisecond)  // Wait 1.5s before first send
+	for i := 1; i <= 5; i++ {
+		ch <- i
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+```
+
+This will trigger the timeout on the first receive. However, the real learning objective is understanding the pattern, not triggering the timeout.
+
+**Real-World Application:**
+
+This pattern is used extensively in production code:
+- API calls with timeouts
+- Database queries with timeouts
+- Network operations with timeouts
+- Any operation that might hang or take too long
+
+The timeout may not trigger in this simple example, but the pattern is essential for robust concurrent code.
 
 ---
 
