@@ -973,6 +973,27 @@ All goroutines finished!
 - `defer wg.Done()` ensures Done is always called
 - WaitGroup coordinates multiple independent goroutines
 
+**My Submission (Final Working Version):**
+```
+func grFunc(id int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	fmt.Printf("Goroutine %v: starting...\n", id)
+	random := rand.IntN(401) + 100
+	time.Sleep(time.Duration(random) * time.Millisecond)
+	fmt.Printf("Goroutine %v: done!\n", id)
+}
+
+func main() {
+	wg := &sync.WaitGroup{}
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go grFunc(i+1, wg)
+	}
+	wg.Wait()
+
+	fmt.Println("All goroutines finished!")
+}
+```
 ---
 
 ### Problem 4E: Buffered Channel Practice (Easy-Medium)
@@ -992,23 +1013,121 @@ Sending 1 (non-blocking, buffer has space)
 Sending 2 (non-blocking, buffer has space)
 Sending 3 (non-blocking, buffer has space)
 Sending 4 (blocks until receiver takes one)
-Sending 5 (blocks until receiver takes one)
-Received: 1
-Received: 2
-Received: 3
-Received: 4
-Received: 5
+Received:  1
+Received:  2
+Received:  3
+Received:  4
+Sending 5 (non-blocking, buffer has space)
+Received:  5
 ```
 
-**Hints:**
-- Buffered channels allow sending up to buffer size without blocking
-- After buffer is full, sends block until space is available
-- Receivers can drain the buffer
+**My Submission (Final Working Version):**
 
-**Key Learning:**
-- Buffered vs unbuffered channel behavior
-- When sends block with buffered channels
-- Decoupling sender/receiver timing
+```go
+func main() {
+	ch := make(chan int, 3)
+	wg := &sync.WaitGroup{}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for curr := range ch {
+			fmt.Println("Received: ", curr)
+		}
+	}()
+
+	for i := 1; i <= 5; i++ {
+		ch <- i
+		if len(ch) == cap(ch) {
+			fmt.Printf("Sending %v (blocks until receiver takes one)\n", i)
+		} else {
+			fmt.Printf("Sending %v (non-blocking, buffer has space)\n", i)
+		}
+	}
+
+	close(ch)
+	wg.Wait()
+}
+```
+
+**Issues Encountered and Fixed:**
+
+1. **Deadlock - Receiver Not Running Concurrently**: Initially tried to receive in the same goroutine before sending, causing deadlock. The receiver blocked waiting for data, and the sender never ran. **Fix**: Start receiver in a goroutine before sending.
+
+2. **Execution Order**: Tried to send all values first, then receive, but with a buffer of 3, sending the 4th value blocks if no receiver is running. **Fix**: Receiver must be in a goroutine and start before sender.
+
+3. **Channel Not Closed**: Initially forgot to close the channel, causing `for range` to deadlock. **Fix**: Close channel after sending all values.
+
+4. **Using Sleep Instead of WaitGroup**: Initially used `time.Sleep()` to wait for receiver. **Fix**: Use `sync.WaitGroup` for proper synchronization.
+
+**Key Concepts Learned:**
+
+- **Receiver Must Be in Goroutine**: To demonstrate buffered channel blocking behavior, sender and receiver must run concurrently. If receiver is in the same goroutine, it blocks and sender never runs.
+
+- **Receiver Must Start First**: Start the receiver goroutine before the sender to ensure it's ready when the sender starts sending. This is especially important with unbuffered channels, but also applies to buffered channels when buffer fills up.
+
+- **Why Goroutine is Needed**: 
+  - In a single goroutine, code executes sequentially
+  - If receiver runs first, it blocks waiting for data
+  - Sender never executes → deadlock
+  - Solution: Run receiver in a separate goroutine so it runs concurrently with sender
+
+- **Buffered Channel Behavior**:
+  - Buffer size 3: Can hold 3 values without blocking
+  - Sends 1-3: Non-blocking (buffer has space)
+  - Send 4: Blocks (buffer full) until receiver takes one
+  - Send 5: Non-blocking again (space available after receiver processes values)
+
+- **WaitGroup vs Sleep**: Use `sync.WaitGroup` instead of `time.Sleep()` for proper synchronization. WaitGroup ensures receiver finishes before program exits, regardless of timing.
+
+**Understanding the Execution Flow:**
+
+```
+Time →
+1. Start receiver goroutine (waiting in for range)
+   ↓
+2. Send 1 → non-blocking (buffer: [1])
+3. Send 2 → non-blocking (buffer: [1,2])
+4. Send 3 → non-blocking (buffer: [1,2,3])
+5. Send 4 → BLOCKS (buffer full, waiting for receiver)
+   ↓
+6. Receiver receives 1 → prints "Received: 1"
+7. Send 4 completes (space available)
+8. Receiver receives 2, 3, 4 → prints them
+9. Send 5 → non-blocking (space available)
+10. Receiver receives 5 → prints it
+11. Close channel → receiver's for range exits
+12. WaitGroup completes → program exits
+```
+
+**Why Receiver Must Be Above Sender:**
+
+- Receiver needs to be ready before sender starts
+- If sender starts first and buffer fills, it blocks waiting for receiver
+- If receiver starts first (in goroutine), it's ready when sender sends
+- This ensures proper concurrent execution
+
+**Key Takeaways:**
+
+1. **Concurrency Required**: To demonstrate blocking behavior, sender and receiver must run concurrently (different goroutines)
+
+2. **Execution Order Matters**: Start receiver first, then sender, to ensure receiver is ready
+
+3. **Proper Synchronization**: Use WaitGroup instead of sleep for reliable coordination
+
+4. **Channel Closure**: Always close channel after sending so `for range` can exit
+
+5. **Buffer Behavior**: Buffered channels allow sending up to buffer size without blocking, then block until space is available
+
+**Real-World Application:**
+
+Buffered channels are used to:
+- Decouple sender/receiver timing
+- Improve performance by reducing blocking
+- Handle bursty workloads
+- Implement producer-consumer patterns with better throughput
+
+The key insight: Buffered channels provide a "queue" that allows some decoupling between sender and receiver, but you still need proper synchronization (WaitGroup) and execution order (receiver ready before sender).
 
 ---
 

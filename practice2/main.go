@@ -5,68 +5,29 @@ import (
 	"sync"
 )
 
-// Problem 4C
-
-func sendNum(ch chan int, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for i := 1; i <= 5; i++ {
-		ch <- i
-	}
-	close(ch)
-}
-
-func sendLetter(ch chan rune, wg *sync.WaitGroup) {
-	defer wg.Done()
-	s := "abcde"
-	for _, c := range s {
-		ch <- c
-	}
-	close(ch)
-}
+// Problem 4E
 
 func main() {
-	chNum := make(chan int)
-	chLetter := make(chan rune)
-	wgNum := &sync.WaitGroup{}
-	wgLetter := &sync.WaitGroup{}
-	wgReceiver := &sync.WaitGroup{}
+	ch := make(chan int, 3)
+	wg := &sync.WaitGroup{}
 
-	wgReceiver.Add(1)
+	wg.Add(1)
 	go func() {
-		numClosed := false
-		letterClosed := false
-		defer wgReceiver.Done()
-		for {
-			select {
-			case num, ok := <-chNum:
-				if !ok {
-					numClosed = true
-					chNum = nil // better to set to nil to exclude from select
-				} else {
-					fmt.Printf("Received number: %v\n", num)
-				}
-			case letter, ok := <-chLetter:
-				if !ok {
-					letterClosed = true
-					chLetter = nil // better to set to nil to exclude from select
-				} else {
-					fmt.Printf("Received letter: %v\n", string(letter))
-				}
-			}
-			if numClosed && letterClosed {
-				break
-			}
+		defer wg.Done()
+		for curr := range ch {
+			fmt.Println("Received: ", curr)
 		}
 	}()
 
-	wgNum.Add(1)
-	wgLetter.Add(1)
-	go sendNum(chNum, wgNum)
-	go sendLetter(chLetter, wgLetter)
-	wgNum.Wait()
-	wgLetter.Wait()
+	for i := 1; i <= 5; i++ {
+		ch <- i
+		if len(ch) == cap(ch) {
+			fmt.Printf("Sending %v (blocks until receiver takes one)\n", i)
+		} else {
+			fmt.Printf("Sending %v (non-blocking, buffer has space)\n", i)
+		}
+	}
 
-	wgReceiver.Wait() // receiver wait group must be after the senders wait groups?
-
-	fmt.Println("Done!")
+	close(ch)
+	wg.Wait()
 }
