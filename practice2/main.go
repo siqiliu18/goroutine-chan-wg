@@ -5,29 +5,38 @@ import (
 	"sync"
 )
 
-// Problem 4E
+// Problem 4F
 
-func main() {
-	ch := make(chan int, 3)
-	wg := &sync.WaitGroup{}
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for curr := range ch {
-			fmt.Println("Received: ", curr)
-		}
-	}()
-
+func sender(ch chan<- int, wg *sync.WaitGroup) {
+	defer wg.Done()
 	for i := 1; i <= 5; i++ {
 		ch <- i
-		if len(ch) == cap(ch) {
-			fmt.Printf("Sending %v (blocks until receiver takes one)\n", i)
-		} else {
-			fmt.Printf("Sending %v (non-blocking, buffer has space)\n", i)
-		}
 	}
-
 	close(ch)
+}
+
+func receiver(ch <-chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for curr := range ch {
+		fmt.Println("Received: ", curr)
+	}
+}
+
+func main() {
+	ch := make(chan int)
+	wg := &sync.WaitGroup{}
+	// wgSender := &sync.WaitGroup{}
+	// wgReceiver := &sync.WaitGroup{}
+
+	wg.Add(1)
+	go sender(ch, wg)
+
+	wg.Add(1)
+	go receiver(ch, wg)
+
+	// wgReceiver.Wait()
+	// wgSender.Wait()
 	wg.Wait()
+
+	fmt.Println("All done!")
 }

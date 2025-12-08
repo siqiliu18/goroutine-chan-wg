@@ -1152,15 +1152,136 @@ Received: 5
 All done!
 ```
 
-**Hints:**
-- `chan<- int` means send-only
-- `<-chan int` means receive-only
-- This provides type safety and makes code intent clear
+**My Submission (Final Working Version):**
+
+```go
+func sender(ch chan<- int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 1; i <= 5; i++ {
+		ch <- i
+	}
+	close(ch)
+}
+
+func receiver(ch <-chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for curr := range ch {
+		fmt.Println("Received: ", curr)
+	}
+}
+
+func main() {
+	ch := make(chan int)
+	wg := &sync.WaitGroup{}
+
+	wg.Add(1)
+	go sender(ch, wg)
+
+	wg.Add(1)
+	go receiver(ch, wg)
+
+	wg.Wait()
+	fmt.Println("All done!")
+}
+```
+
+**Key Concepts Learned:**
+
+- **Channel Direction Types**: 
+  - `chan<- int` means send-only channel (can only send, compile-time enforced)
+  - `<-chan int` means receive-only channel (can only receive, compile-time enforced)
+  - Provides type safety and makes code intent clear
+
+- **Why Order Doesn't Matter (When Both Are Goroutines)**:
+  - Both sender and receiver are in separate goroutines
+  - If sender starts first and tries to send → blocks until receiver is ready (doesn't block main)
+  - If receiver starts first → ready when sender sends
+  - Since both are concurrent, order doesn't matter - one will wait for the other if needed
+
+- **One WaitGroup vs Multiple WaitGroups**:
+  - **One WaitGroup is sufficient** when you just need to wait for all goroutines to finish with no coordination steps
+  - **Multiple WaitGroups are needed** when you need to coordinate stages or perform actions between waiting for different groups
+  - Example: Problem 4A needed separate WaitGroups because you had to close the channel after producers finish, then wait for consumer
+
+**Q&A: Why Doesn't Sender/Receiver Order Matter in Problem 4F?**
+
+**Question**: In Problem 4E, receiver had to be above sender. Why doesn't order matter in Problem 4F?
+
+**Answer**: The key difference is that **both sender and receiver are in goroutines** in Problem 4F.
+
+**Problem 4E (order matters):**
+- Receiver in goroutine
+- Sender in main (same goroutine)
+- If sender in main tries to send before receiver is ready → main blocks → deadlock
+
+**Problem 4F (order doesn't matter):**
+- Sender in goroutine
+- Receiver in goroutine  
+- If sender tries to send before receiver is ready → sender goroutine blocks (not main) → receiver starts → unblocks
+- If receiver starts first → ready when sender sends → works immediately
+
+**Visual Comparison:**
+
+**Problem 4E (order matters):**
+```
+Main goroutine: [Start receiver goroutine] → [Send values] ← BLOCKS if receiver not ready
+Receiver goroutine: [Waiting to receive]
+```
+If receiver isn't ready, main blocks.
+
+**Problem 4F (order doesn't matter):**
+```
+Main goroutine: [Start sender goroutine] → [Start receiver goroutine] → [Wait]
+Sender goroutine: [Send] ← BLOCKS if needed, but doesn't block main
+Receiver goroutine: [Receive] ← Ready when needed
+```
+Both are concurrent; blocking is within goroutines, not main.
+
+**Q&A: When to Use One WaitGroup vs Multiple WaitGroups?**
+
+**Question**: When should I use one WaitGroup vs multiple WaitGroups?
+
+**Answer**: 
+
+**Use ONE WaitGroup when:**
+- You just need to wait for all goroutines to finish
+- No coordination steps between groups
+- No specific order required
+- Example: Problem 4F - just wait for sender and receiver to finish
+
+**Use MULTIPLE WaitGroups when:**
+- You need to do something BETWEEN waiting for different groups
+- You need to coordinate stages (e.g., close channel after senders, then wait for receivers)
+- Different groups have different completion criteria
+- You need to ensure a specific sequence of operations
+
+**Examples:**
+
+**One WaitGroup (Problem 4F):**
+```go
+wg.Add(2)
+go sender(...)
+go receiver(...)
+wg.Wait()  // Wait for both - no coordination needed
+```
+
+**Multiple WaitGroups (Problem 4A):**
+```go
+producerWg.Wait()    // Wait for producers to finish
+close(shared)        // THEN close channel (coordination step!)
+consumerWg.Wait()    // THEN wait for consumer to finish
+```
+
+**Decision Guide:**
+- **One WaitGroup**: No coordination steps, just wait for all
+- **Multiple WaitGroups**: Need to do something between waiting (close channel, signal, etc.)
 
 **Key Learning:**
 - Channel direction types for better code safety
 - Enforcing send-only or receive-only at compile time
 - Clearer function signatures
+- When both sender and receiver are in goroutines, execution order doesn't matter
+- One WaitGroup is sufficient when no coordination is needed between groups
 
 ---
 
