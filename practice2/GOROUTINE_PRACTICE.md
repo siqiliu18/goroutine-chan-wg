@@ -259,6 +259,148 @@ func main() {
 - `sync.WaitGroup`: Coordinate waiting for multiple goroutines
 - Channel closure signals workers to stop (via `for range`)
 
+### Q&A: One WaitGroup vs Multiple WaitGroups in Problem 3
+
+**Question**: When practicing Problem 3 again, I tried three approaches:
+1. Only sender in WaitGroup → output stopped at task 7-8
+2. Separate WaitGroups for sender and workers → worked
+3. Same WaitGroup for both sender and workers → also worked
+
+When should I use one WaitGroup vs multiple WaitGroups?
+
+**Answer**: Great observation! This demonstrates an important concept about WaitGroup usage.
+
+**Observation 1: Only Sender in WaitGroup → Incomplete Output**
+
+```go
+wg.Add(1)
+go sender(taskCh, wg)  // Only sender in WaitGroup
+// Workers NOT in WaitGroup
+wg.Wait()  // Only waits for sender
+```
+
+**What Happened:**
+- Sender finishes → closes channel → `wg.Done()` called
+- Main calls `wg.Wait()` → only waits for sender
+- Main exits immediately
+- Workers are still processing tasks 7-10
+- Program exits before workers finish → incomplete output
+
+**Why**: You only waited for the sender, not the workers. The program exits before workers complete their work.
+
+**Observation 2: Separate WaitGroups → Works**
+
+```go
+wgSender.Add(1)
+go sender(taskCh, wgSender)
+
+wgWorker.Add(3)
+go worker(1, taskCh, wgWorker)
+go worker(2, taskCh, wgWorker)
+go worker(3, taskCh, wgWorker)
+
+wgSender.Wait()  // Wait for sender
+wgWorker.Wait()  // Wait for workers
+```
+
+**What Happened:**
+- `wgSender.Wait()` → waits for sender to finish
+- Sender closes channel
+- `wgWorker.Wait()` → waits for all workers to finish
+- All tasks processed → complete output
+
+**Why**: You waited for both groups separately. This works but is unnecessary in this case.
+
+**Observation 3: Same WaitGroup for Both → Works (Simplest)**
+
+```go
+wg.Add(1)      // Sender
+go sender(taskCh, wg)
+
+wg.Add(3)      // 3 Workers
+go worker(1, taskCh, wg)
+go worker(2, taskCh, wg)
+go worker(3, taskCh, wg)
+
+wg.Wait()      // Wait for all 4 goroutines
+```
+
+**What Happened:**
+- `wg.Add(1)` for sender
+- `wg.Add(3)` for 3 workers
+- `wg.Wait()` → waits for all 4 goroutines (1 sender + 3 workers)
+- All finish → complete output
+
+**Why**: One WaitGroup can track multiple goroutines. Since there's no coordination step needed, one WaitGroup is sufficient.
+
+**When to Use One WaitGroup:**
+
+- ✅ You just need to wait for all goroutines to finish
+- ✅ No coordination steps between groups
+- ✅ All goroutines are independent
+- ✅ Example: Problem 3 - sender and workers finish independently
+
+**When to Use Multiple WaitGroups:**
+
+- ✅ You need to do something BETWEEN waiting for different groups
+- ✅ You need to coordinate stages
+- ✅ Different groups have different completion criteria
+- ✅ Example: Problem 4A - need to close channel after producers, then wait for consumer
+
+**Why Problem 3 Works with One WaitGroup:**
+
+In Problem 3:
+- Sender sends all tasks and closes the channel
+- Workers process until the channel is closed
+- **No coordination step needed** between sender finishing and workers finishing
+- They all finish independently
+- One WaitGroup is sufficient
+
+**Visual Flow:**
+
+```
+Sender: [Send 1-10] → [Close channel] → Done (wg.Done())
+Workers: [Process tasks] → [Channel closes] → Done (wg.Done())
+Main: [Wait for all] → All done!
+```
+
+**When Multiple WaitGroups Would Be Needed:**
+
+If you needed to do something between sender finishing and workers finishing:
+
+```go
+// Hypothetical: Need to log after sender finishes
+wgSender.Wait()           // Wait for sender
+fmt.Println("All tasks sent!")  // ⚠️ COORDINATION STEP
+wgWorker.Wait()           // THEN wait for workers
+```
+
+But in Problem 3, this isn't needed, so one WaitGroup works.
+
+**Decision Guide:**
+
+| Scenario | WaitGroups Needed | Why |
+|----------|-------------------|-----|
+| Just wait for all goroutines | **One** | No coordination needed |
+| Need to do something between groups | **Multiple** | Coordination step required |
+| All goroutines independent | **One** | Simple case |
+| Pipeline stages (A→B→C) | **Multiple** | Need to coordinate between stages |
+
+**Summary:**
+
+- **Observation 1**: Only waiting for sender → incomplete (workers still running)
+- **Observation 2**: Separate WaitGroups → works (but unnecessary here)
+- **Observation 3**: One WaitGroup → works (simplest and correct)
+
+**For Problem 3, one WaitGroup is sufficient because:**
+- Sender and workers are independent after channel is closed
+- No coordination step needed
+- You just need to wait for all to finish
+
+**Use multiple WaitGroups when you need to perform actions between waiting for different groups** (like closing channels, signaling, logging, etc.).
+
+**Your current solution (Observation 3) is correct and the simplest approach for Problem 3.**
+
 ---
 
 ## Problem 4: Fan-Out Fan-In Pattern (Medium-Hard)
